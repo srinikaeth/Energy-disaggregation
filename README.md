@@ -1,5 +1,5 @@
 # CS229-Group-Project---Team-Asia
-EJ/n
-Sri/n
-Jason/n
+EJ
+Sri
+Jason
 trying  to disrupt the industry
