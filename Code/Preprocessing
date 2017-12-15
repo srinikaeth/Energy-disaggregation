@@ -1,0 +1,231 @@
+
+# ## REDD Data Processing
+#  
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+get_ipython().magic('matplotlib inline')
+from IPython.display import display
+from pandas import ExcelWriter
+
+
+# ## Load the Data
+
+houses = {}
+for i in range(1,7):
+    house_name = 'house_{}'.format(i)
+    data_name = 'house_{}.csv'.format(i)
+    houses[house_name] = pd.read_csv(data_name)
+
+
+# ## Convert raw time data to formatted time
+
+for house_key in houses.keys():
+    house = houses[house_key]
+    house= house.drop('Unnamed: 0', axis = 1)
+    house['time'] = pd.to_datetime(house['time'],format = '%Y-%m-%d %H:%M:%S')
+    house['Weekday'] = house['time'].dt.weekday
+    house['Hour'] = house['time'].dt.hour
+    house['Minute'] = house['time'].dt.minute
+    house['Seconds'] = house['time'].dt.second
+    house['Month'] = house['time'].dt.month
+    house['Day'] = house['time'].dt.day
+    houses[house_key] = house
+
+
+# ## Index the Time
+
+# df_houses = {}
+for house_key in houses.keys():
+    house = houses[house_key]
+    house['Datetime']= pd.to_datetime(house['time'], format = '%Y-%m-%d %H:%M:%S')
+    house = house.set_index('Datetime')
+    house = house.drop('time', axis=1)
+    houses[house_key] = house  
+
+
+
+# ## Baseline Extraction Method
+
+import peakutils
+from peakutils.plot import plot as pplot
+
+## This Function will Extract Time Series Baseline Given a DataFrame
+def bs_extract(a):
+    cols = list(a)   # get the column headers of the dataframe
+    cols = cols[:-6]   # so that we don't take baseline of weekdays, hour ...
+    df_bs = pd.DataFrame()
+    time_index = a.index.values
+    df_bs = df_bs.assign(Datetime = time_index)
+    df_bs.set_index('Datetime')
+    
+    for i in cols:
+        col_arr = np.array(a[i])
+        arr_len = len(col_arr)
+        try:
+            base_arr = peakutils.baseline(col_arr,0)
+            # get rid of some of the ridiculosly small ones
+            if np.linalg.norm(base_arr) < 0.1:
+                base_arr = np.zeros(arr_len)
+            df_bs[i] = base_arr
+        except ZeroDivisionError:
+            base_arr = np.zeros(arr_len)
+            df_bs[i] = base_arr
+            print (i + ' is a piece of shit')
+            
+    return df_bs
+
+# We will extract the baselines for every single house data
+baselines = {}
+for house_key in houses.keys():
+    house = houses[house_key]
+    baselines[house_key] = bs_extract(house)
+    
+## Preprocessing
+
+class features:
+    # just object initialization
+    def __init__(self, house):
+        self.house = house
+    # return max daily usage
+    def max_node(self):
+        house = houses[self.house].resample('D').max().bfill()
+        house = house.drop('Weekday', axis = 1)
+        house = house.drop('Hour', axis = 1)
+        house = house.drop('Month', axis = 1)
+        house = house.drop('Day', axis = 1)
+        house = house.drop('Seconds', axis = 1)
+        house = house.drop('Minute', axis = 1)
+        house['Weekday'] = house.index.weekday
+        house['Hour'] = house.index.hour
+        house['Month'] = house.index.month
+        house['Day'] = house.index.day
+        return house
+    # return minimum daily usage
+    def min_node(self):
+        house = houses[self.house].resample('D').min().bfill()
+        house = house.drop('Weekday', axis = 1)
+        house = house.drop('Hour', axis = 1)
+        house = house.drop('Month', axis = 1)
+        house = house.drop('Day', axis = 1)
+        house = house.drop('Seconds', axis = 1)
+        house = house.drop('Minute', axis = 1)
+        house['Weekday'] = house.index.weekday
+        house['Hour'] = house.index.hour
+        house['Month'] = house.index.month
+        house['Day'] = house.index.day
+        return house
+    # return mean of hourly usage
+    def mean_node(self):
+        house = houses[self.house].resample('H').mean().bfill()
+        house = house.drop('Weekday', axis = 1)
+        house = house.drop('Hour', axis = 1)
+        house = house.drop('Month', axis = 1)
+        house = house.drop('Day', axis = 1)
+        house = house.drop('Seconds', axis = 1)
+        house = house.drop('Minute', axis = 1)
+        house['Weekday'] = house.index.weekday
+        house['Hour'] = house.index.hour
+        house['Month'] = house.index.month
+        house['Day'] = house.index.day
+        return house
+    # return variance of hourly usage
+    def var_node(self):
+        house = houses[self.house].resample('H').var().bfill()
+        house = house.drop('Weekday', axis = 1)
+        house = house.drop('Hour', axis = 1)
+        house = house.drop('Month', axis = 1)
+        house = house.drop('Day', axis = 1)
+        house = house.drop('Seconds', axis = 1)
+        house = house.drop('Minute', axis = 1)
+        house['Weekday'] = house.index.weekday
+        house['Hour'] = house.index.hour
+        house['Month'] = house.index.month
+        house['Day'] = house.index.day
+        return house
+
+# ## Prepare house_1 dataset for training by extracting features for each sample1
+
+
+## this is far from the most efficient way to prepare the training data, but it works. 
+
+house_1_org = pd.DataFrame()
+time_index = houses['house_1'].index.values
+house_1_org = house_1_org.assign(Datetime = time_index)
+house_1_org.set_index('Datetime')
+
+def training_prep(main_df):
+    col_names = ['min_d', 'max_d', 'mean_h', 'var_h', 'baseline_d','hour', 'weekday', 'label']
+    min_node = features(main_df).min_node()
+    max_node = features(main_df).max_node()
+    mean_node = features(main_df).mean_node()
+    var_node = features(main_df).var_node()
+    main_df = houses[main_df]   
+    time_index = main_df.index.values
+    main_cols = list(main_df)[:-6] 
+    baseline = bs_extract(main_df)
+    
+    # for each date we will assign them to the index in the order of min/max/var/mean_node dataframe
+    search_index = {}
+    j = 0
+    for i in range(418, 431):
+        search_index[str(i)] = j
+        j += 1
+    for i in range(51, 60):
+        search_index[str(i)] = j
+        j += 1
+    for i in range(510, 525):
+        search_index[str(i)] = j
+        j += 1
+    
+    house_train = {}
+    for col in main_cols:
+        house_org = pd.DataFrame(columns = col_names)
+        house_org = house_org.assign(Datetime = time_index)
+        house_org['weekday'] = house_org['Datetime'].dt.weekday
+        house_org['hour'] = house_org['Datetime'].dt.hour
+        
+        min_d = []
+        max_d = []
+        mean_h = []
+        var_h = []
+        for i in range(len(house_org)):
+            time = house_org['Datetime'][i]
+            index = str(time.month) + str(time.day)
+            min_d.append(min_node.iloc[search_index[index]][col])
+            max_d.append(max_node.iloc[search_index[index]][col])
+            mean_h.append(mean_node.iloc[search_index[index]][col])
+            var_h.append(var_node.iloc[search_index[index]][col])
+            
+        house_org['min_d'] = min_d
+        house_org['max_d'] = max_d
+        house_org['mean_h'] = mean_h
+        house_org['var_h'] = var_h
+        house_org['baseline_d'] = baselines['house_1'][col]
+        house_org['label'] = col
+        house_train[col] = house_org
+        
+    return house_train
+
+training_data = training_prep('house_1')
+
+path = 'C:/Users/BMY/Desktop/CS 229/Project/csv training data/csv training data/'
+
+train_data_full = {}
+
+## Creating the labels for the dictionary in the same order as the read_csv function
+names = list(houses['house_1'])[:-6]
+
+sorted_names = sorted(names)
+
+## had to sort out alphabetical names
+a,b = sorted_names.index('kitchen_outlets_x'), sorted_names.index('kitchen_outlets_x.1')
+c,d = sorted_names.index('kitchen_outlets_y'), sorted_names.index('kitchen_outlets_y.1')
+sorted_names[b], sorted_names[a] = sorted_names[a], sorted_names[b]
+sorted_names[d], sorted_names[c] = sorted_names[c], sorted_names[d]
+
+## create csvs for each appliance with time dependent features
+import os
+for (i,filename) in enumerate(os.listdir(path)):
+    train_data_full[sorted_names[i]] = pd.read_csv(path + filename)
