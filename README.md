@@ -1,5 +1,6 @@
 # CS229-Group-Project---Team-Asia
 EJ
-Sri
+Srinikaeth
 Jason
-trying  to disrupt the industry
+Project for CS229: APPLIANCE-SPECIFIC POWER USAGE CLASSIFICATION & DISAGGREGATION
+
